@@ -1020,7 +1020,6 @@ function requestBatchTagUpdate() {
   const addTags = addRaw ? addRaw.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
   const removeTags = removeRaw ? removeRaw.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
 
-  // 💡 【超重要】ここで確認メッセージ（msg）を作っています。この処理の「下」に送信処理を書く必要があります。
   const msg = `選択中の ${selectedP2ProductIds.size} 件の商品に対して、タグの一括更新を実行しますか？\n` +
               (addTags.length ? `・追加: [${addTags.join(', ')}]\n` : '') +
               (removeTags.length ? `・削除: [${removeTags.join(', ')}]` : '');
@@ -1059,7 +1058,6 @@ function requestBatchTagUpdate() {
     });
   });
 }
-
 
     function onBatchUpdateSuccess(res) {
       showLoading(false);
