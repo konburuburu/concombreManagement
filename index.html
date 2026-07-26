@@ -366,53 +366,16 @@
     // ツールチップ表示制御用の状態変数
     let currentOpenTooltipCard = null;
 
-function openCardTooltip(cardEl) {
-const tooltip = cardEl.querySelector('.product-tooltip');
-if (!tooltip) return;
-
-// 一旦スタイルをリセットして正しい寸法を測れるようにする
-tooltip.style.left = '50%';
-tooltip.style.transform = 'translateX(-50%)';
-tooltip.style.top = 'auto';
-tooltip.style.bottom = 'auto';
-
-const rect = cardEl.getBoundingClientRect();
-const tooltipRect = tooltip.getBoundingClientRect();
-const viewportWidth = window.innerWidth;
-const viewportHeight = window.innerHeight;
-
-// 1. 上下切れ対策：上部スペースが足りなければ下側に表示
-const tooltipHeight = tooltipRect.height || 80;
-if (rect.top < tooltipHeight + 15) {
-tooltip.style.top = 'calc(100% + 8px)';
-} else {
-tooltip.style.bottom = 'calc(100% + 8px)';
-}
-
-// 2. 左右切れ対策：画面の端からはみ出る場合、位置を補正する
-// ツールチップの画面上の左端・右端を計算
-const cardCenterX = rect.left + rect.width / 2;
-const halfTooltipWidth = tooltipRect.width / 2;
-
-let offsetX = -50; // デフォルトは中央揃え (-50%)
-const margin = 10; // 画面端からの余白（マージン）
-/***
-// 左端からはみ出る場合
-if (cardCenterX - halfTooltipWidth < margin) {
-// 画面左端に合わせる（カードの中心位置からのピクセル差分で計算）
-const overflowLeft = margin - (cardCenterX - halfTooltipWidth);
-offsetX = -50 + (overflowLeft / tooltipRect.width) * 100;
-} 
-// 右端からはみ出る場合
-else if (cardCenterX + halfTooltipWidth > viewportWidth - margin) {
-const overflowRight = (cardCenterX + halfTooltipWidth) - (viewportWidth - margin);
-offsetX = -50 - (overflowRight / tooltipRect.width) * 100;
-}
-***/
-// 適用
-tooltip.style.left = '50%';
-tooltip.style.transform = `translateX(${offsetX}%)`;
-}
+    function openCardTooltip(cardEl) {
+      if (currentOpenTooltipCard && currentOpenTooltipCard !== cardEl) {
+        const prevTooltip = currentOpenTooltipCard.querySelector('.product-tooltip');
+        if (prevTooltip) prevTooltip.classList.remove('is-active');  
+      }
+      currentOpenTooltipCard = cardEl;
+  
+      const tooltip = cardEl.querySelector('.product-tooltip');
+      if (tooltip) tooltip.classList.add('is-active');
+    }
 
     function closeCardTooltip() {
       if (currentOpenTooltipCard) {
