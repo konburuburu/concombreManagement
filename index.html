@@ -388,7 +388,7 @@ tooltip.style.top = 'calc(100% + 8px)';
 } else {
 tooltip.style.bottom = 'calc(100% + 8px)';
 }
-
+/***
 // 2. 左右切れ対策：画面の端からはみ出る場合、位置を補正する
 // ツールチップの画面上の左端・右端を計算
 const cardCenterX = rect.left + rect.width / 2;
@@ -408,7 +408,7 @@ else if (cardCenterX + halfTooltipWidth > viewportWidth - margin) {
 const overflowRight = (cardCenterX + halfTooltipWidth) - (viewportWidth - margin);
 offsetX = -50 - (overflowRight / tooltipRect.width) * 100;
 }
-
+***/
 // 適用
 tooltip.style.left = '50%';
 tooltip.style.transform = `translateX(${offsetX}%)`;
