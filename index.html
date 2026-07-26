@@ -3,47 +3,1236 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>コンコンブル所持チェッカー</title>
+  <title>商品コレクション管理</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <style>
+    .product-card {
+      position: relative;
+    }
+    .product-tooltip {
+      visibility: hidden;
+      opacity: 0;
+      transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
+      pointer-events: none;
+      z-index: 30;
+    }
+    /* ホバー時の自動消去を防ぎ、アクティブ状態を維持するCSS定義 */
+    .product-tooltip.is-active {
+      visibility: visible;
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* 保持選択状態（ページ1） */
+    .is-held {
+      outline: 3px solid #3b82f6;
+      outline-offset: -1px;
+      transform: scale(0.97);
+    }
+    .is-held::after {
+      content: '✓ 所持中';
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background-color: #3b82f6;
+      color: white;
+      font-size: 9px;
+      font-weight: bold;
+      padding: 1px 5px;
+      border-radius: 9999px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      z-index: 10;
+    }
+
+    /* 編集選択状態（ページ2） */
+    .is-selected-edit {
+      outline: 3px solid #10b981;
+      outline-offset: -1px;
+      transform: scale(0.97);
+    }
+    .is-selected-edit::after {
+      content: '✓ 選択中';
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background-color: #10b981;
+      color: white;
+      font-size: 9px;
+      font-weight: bold;
+      padding: 1px 5px;
+      border-radius: 9999px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      z-index: 10;
+    }
+
+    /* ギャラリー用ホバーズーム */
+    .gallery-img-container {
+      position: relative;
+    }
+    .gallery-img-container img {
+      transition: transform 0.25s ease-out;
+    }
+    .gallery-img-container:hover img {
+      transform: scale(1.08);
+    }
+  </style>
 </head>
-<body>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col">
 
-  <h2>スプレッドシートへ送信</h2>
-  <form id="myForm">
-    <input type="text" id="name" placeholder="お名前" required><br><br>
-    <input type="text" id="message" placeholder="メッセージ" required><br><br>
-    <button type="submit">送信する</button>
-  </form>
-  <script>
-    // GASの最新WEBアプリURL（/exec まで）を貼り付け
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbzkzImKlMNZgKCqiuumr396EIg1baSBNOIDrdcHk_XJpKHlgn0igdGH9_swMYvbfMVB_g/exec";
-
-    document.getElementById("myForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
+  <!-- ヘッダー / ナビゲーション -->
+  <header class="bg-slate-900 text-white shadow-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+      <div class="flex items-center space-x-3">
+        <i class="fa-solid fa-boxes-packing text-2xl text-amber-400"></i>
+        <h1 class="text-xl font-bold tracking-wide">商品コレクション管理</h1>
+      </div>
       
-      // 送信するデータを作成
-      const formData = {
-        name: document.getElementById("name").value,
-        message: document.getElementById("message").value
+      <!-- タブ切り替えボタン (3ページ構成) -->
+      <nav class="flex bg-slate-800 p-1 rounded-lg border border-slate-700 gap-1">
+        <button id="tab-btn-page1" onclick="switchTab('page1')" class="px-3.5 py-1.5 rounded-md font-medium text-xs sm:text-sm transition-all bg-amber-500 text-slate-950 shadow-sm">
+          <i class="fa-solid fa-layer-group mr-1.5"></i>所持チェッカー
+        </button>
+        <button id="tab-btn-page2" onclick="switchTab('page2')" class="px-3.5 py-1.5 rounded-md font-medium text-xs sm:text-sm transition-all text-slate-300 hover:text-white">
+          <i class="fa-solid fa-tags mr-1.5"></i>タグ編集
+        </button>
+        <button id="tab-btn-page3" onclick="switchTab('page3')" class="px-3.5 py-1.5 rounded-md font-medium text-xs sm:text-sm transition-all text-slate-300 hover:text-white">
+          <i class="fa-solid fa-images mr-1.5"></i>画像一覧
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ローディング & エラーオーバーレイ -->
+  <div id="loading-overlay" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center text-white p-4">
+    <div id="loading-spinner-container" class="flex flex-col items-center">
+      <i class="fa-solid fa-circle-notch fa-spin text-5xl text-amber-400 mb-4"></i>
+      <p class="text-lg font-medium tracking-wide" id="loading-text">商品を読み込んでいます...</p>
+    </div>
+    
+    <!-- エラー発生時の画面上表示用パネル -->
+    <div id="loading-error-box" class="hidden max-w-lg w-full bg-rose-900/90 border border-rose-500 text-white p-6 rounded-xl shadow-2xl space-y-4">
+      <div class="flex items-center gap-3 border-b border-rose-700 pb-3">
+        <i class="fa-solid fa-triangle-exclamation text-2xl text-rose-300"></i>
+        <h3 class="font-bold text-lg text-rose-100">データの取得に失敗しました</h3>
+      </div>
+      <p id="loading-error-message" class="text-sm text-rose-200 font-mono break-all leading-relaxed"></p>
+      <div class="pt-2 flex justify-end gap-3">
+        <button onclick="fetchProductsFromGAS()" class="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2 rounded-lg transition-colors">
+          <i class="fa-solid fa-rotate-right mr-1"></i> 再試行
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- メインコンテンツ領域 -->
+  <main class="max-w-7xl mx-auto px-4 py-6 flex-grow w-full">
+
+    <!-- ========================================== -->
+    <!-- ページ 1 : コレクション閲覧 ＆ 保持記録     -->
+    <!-- ========================================== -->
+    <section id="page1" class="space-y-6">
+      
+      <!-- 検索・フィルターコントロール -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div class="space-y-0.5">
+            <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+              <i class="fa-solid fa-filter text-indigo-600"></i> 絞り込み ＆ キーワード検索
+            </h2>
+            <p class="text-xs text-slate-500">タグのクリック（AND検索）および名前・IDによるリアルタイム絞り込み</p>
+          </div>
+          
+          <!-- キーワード検索ボックス -->
+          <div class="flex items-center gap-2">
+            <div class="relative w-full md:w-64">
+              <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+              <input type="text" id="p1-keyword-search" oninput="onP1SearchInput()" placeholder="商品名・IDで検索..." class="w-full text-xs pl-8 pr-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            <button onclick="clearTagFilters()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg border border-slate-300 transition-colors whitespace-nowrap flex items-center gap-1">
+              <i class="fa-solid fa-xmark"></i> リセット
+            </button>
+          </div>
+        </div>
+
+        <!-- タグクラウド -->
+        <div id="p1-tag-cloud" class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1">
+          <!-- JSで動的にタグバッジを生成 -->
+        </div>
+      </div>
+
+      <!-- 2カラムレイアウト: 一覧表示 + 所持商品IDテキストエリア -->
+      <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+        
+        <!-- 左側 (3列): シリーズ別画像一覧（高密度グリッド表示） -->
+        <div class="lg:col-span-3 space-y-6" id="p1-series-container">
+          <!-- JSで動的にシリーズグループを生成 -->
+        </div>
+
+        <!-- 右側 (1列): 所持商品IDリスト表示領域 -->
+        <div class="lg:col-span-1 lg:sticky lg:top-20 space-y-3">
+          <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="font-bold text-slate-900 flex items-center gap-2 text-xs sm:text-sm">
+                <i class="fa-solid fa-clipboard-check text-blue-600"></i> 所持商品ID一覧
+              </h3>
+              <span id="p1-held-count" class="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded-full">0件</span>
+            </div>
+            <p class="text-[11px] text-slate-500">クリックで所持状態がトグルします（自動保存対応）。</p>
+            
+            <textarea id="p1-held-ids-textarea" readonly rows="12" class="w-full text-xs font-mono bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-slate-700 focus:outline-none resize-y" placeholder="所持している画像をクリックすると、ここに商品IDがリストアップされます..."></textarea>
+            
+            <div class="flex gap-2">
+              <button onclick="copyHeldIds()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-xs py-2 px-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-1">
+                <i class="fa-regular fa-copy"></i> IDをコピー
+              </button>
+              <button onclick="clearAllHeld()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs py-2 px-3 rounded-lg font-medium transition-colors">
+                クリア
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- ページ 2 : タグ一括編集                      -->
+    <!-- ========================================== -->
+    <section id="page2" class="space-y-6 hidden">
+      
+      <!-- タグ一括更新用操作フォーム -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4 sticky top-16 z-40">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <div>
+            <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+              <i class="fa-solid fa-pen-to-square text-emerald-600"></i> 選択商品のタグ一括更新
+            </h2>
+            <p class="text-xs text-slate-500">画像をクリックして複数選択し、タグの追加または削除を一括実行します。</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <span id="p2-selected-count" class="text-xs font-bold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">
+              選択中: 0 件
+            </span>
+            <button onclick="selectAllP2Products()" class="text-xs text-slate-600 hover:text-slate-900 underline">全選択</button>
+            <button onclick="clearP2Selections()" class="text-xs text-slate-600 hover:text-slate-900 underline">全解除</button>
+          </div>
+        </div>
+
+        <!-- 入力フォームエリア -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+          
+          <!-- 追加タグフォーム -->
+          <div class="lg:col-span-2 space-y-1">
+            <label class="block text-xs font-bold text-slate-700">
+              <i class="fa-solid fa-plus text-emerald-600 mr-1"></i>追加したいタグ <span class="text-slate-400 font-normal">(カンマ区切りで複数可)</span>
+            </label>
+            <input type="text" id="p2-add-tags-input" placeholder="例: 2025, 限定, 新作" class="w-full text-xs border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-emerald-500 outline-none">
+          </div>
+
+          <!-- 削除タグフォーム (サジェスト付き) -->
+          <div class="lg:col-span-2 space-y-1">
+            <label class="block text-xs font-bold text-slate-700">
+              <i class="fa-solid fa-minus text-rose-600 mr-1"></i>削除したいタグ <span class="text-slate-400 font-normal">(サジェスト利用可)</span>
+            </label>
+            <input type="text" id="p2-remove-tags-input" list="existing-tags-list" placeholder="削除するタグを選択または入力" class="w-full text-xs border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-rose-500 outline-none">
+            <datalist id="existing-tags-list"></datalist>
+          </div>
+
+          <!-- 実行ボタン -->
+          <div class="lg:col-span-1">
+            <button onclick="requestBatchTagUpdate()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-3 rounded-lg shadow transition-all flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-check"></i> 変更を適用
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ページ2用 商品画像一覧 -->
+      <div id="p2-series-container" class="space-y-6">
+        <!-- JSで動的にシリーズグループを生成 -->
+      </div>
+
+    </section>
+
+    <!-- ========================================== -->
+    <!-- ページ 3 : 純粋画像ギャラリー (テキスト非表示) -->
+    <!-- ========================================== -->
+    <section id="page3" class="space-y-6 hidden">
+      
+      <!-- コントロールバー ＆ タグフィルター -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
+          <div class="flex items-center space-x-2">
+            <i class="fa-solid fa-images text-purple-600 text-lg"></i>
+            <h2 class="text-base font-bold text-slate-900">画像コレクションギャラリー</h2>
+            <span id="p3-total-count" class="text-xs bg-purple-100 text-purple-800 font-bold px-2.5 py-0.5 rounded-full">全 0 点</span>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <!-- タグリセットボタン -->
+            <button onclick="clearP3TagFilters()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg border border-slate-300 transition-colors whitespace-nowrap flex items-center gap-1">
+              <i class="fa-solid fa-xmark"></i> タグリセット
+            </button>
+
+            <!-- サイズ切り替え -->
+            <div class="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
+              <span class="text-slate-500 px-1 font-medium">表示サイズ:</span>
+              <button onclick="setP3ImageSize('sm')" id="p3-size-sm" class="px-2 py-1 rounded bg-white shadow-sm font-bold text-slate-800">小</button>
+              <button onclick="setP3ImageSize('md')" id="p3-size-md" class="px-2 py-1 rounded text-slate-600 hover:text-slate-900">中</button>
+              <button onclick="setP3ImageSize('lg')" id="p3-size-lg" class="px-2 py-1 rounded text-slate-600 hover:text-slate-900">大</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- タグクラウド (ページ3用) -->
+        <div id="p3-tag-cloud" class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1">
+          <!-- JSで動的にタグバッジを生成 -->
+        </div>
+      </div>
+
+      <!-- 画像グリッドコンテナ -->
+      <div id="p3-series-container" class="space-y-6">
+        <!-- JSで動的に純粋画像のみのグリッドを生成 -->
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- 画像拡大（ライトボックス）プレビューモーダル -->
+  <div id="image-modal" onclick="closeImageModal()" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden cursor-pointer">
+    <div onclick="event.stopPropagation()" class="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-4 space-y-3 border border-slate-700 relative cursor-default">
+      <button onclick="closeImageModal()" class="absolute top-3 right-3 text-slate-400 hover:text-slate-700 text-lg w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center transition-colors">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <div class="w-full aspect-square bg-slate-100 rounded-xl overflow-hidden flex items-center justify-center border border-slate-200">
+        <img id="modal-img-element" src="" alt="拡大画像" class="w-full h-full object-contain">
+      </div>
+
+      <div class="space-y-1 text-center pt-1">
+        <p id="modal-img-name" class="font-bold text-slate-900 text-sm sm:text-base"></p>
+        <p id="modal-img-id" class="font-mono text-xs text-slate-500"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- トースト通知コンテナ -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+  <!-- カスタム確認モーダル (confirm代替) -->
+  <div id="confirm-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-5 space-y-4 border border-slate-200">
+      <div class="flex items-center gap-3 text-slate-900">
+        <i class="fa-solid fa-circle-question text-amber-500 text-2xl"></i>
+        <h3 class="font-bold text-base" id="modal-title">処理の確認</h3>
+      </div>
+      <p class="text-xs text-slate-600 leading-relaxed" id="modal-message">本当に実行しますか？</p>
+      <div class="flex justify-end gap-2 pt-2">
+        <button id="modal-cancel-btn" class="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+          キャンセル
+        </button>
+        <button id="modal-confirm-btn" class="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors">
+          実行する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- フッター -->
+  <footer class="bg-white border-t border-slate-200 mt-auto py-3 text-center text-xs text-slate-500">
+    商品コレクション管理 アプリ &copy; Google Apps Script
+  </footer>
+
+  <!-- ========================================== -->
+  <!-- JavaScript ロジック                         -->
+  <!-- ========================================== -->
+  <script>
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbzkzImKlMNZgKCqiuumr396EIg1baSBNOIDrdcHk_XJpKHlgn0igdGH9_swMYvbfMVB_g/exec";
+    let allProducts = [];                // スプレッドシートからの全商品データ
+    let allTags = new Set();             // 全タグ集合
+    const heldProductIds = new Set();    // ページ1: 保持中商品ID
+    const selectedFilterTags = new Set(); // ページ1: タグ検索フィルター
+    let searchKeyword = '';             // ページ1: キーワード検索語句
+    const selectedP2ProductIds = new Set(); // ページ2: タグ編集選択中商品ID
+    const selectedP3FilterTags = new Set(); // ページ3: タグ検索フィルター
+    let p3ImageSize = 'sm';              // ページ3: 画像表示サイズ ('sm', 'md', 'lg')
+
+    // ツールチップ表示制御用の状態変数
+    let currentOpenTooltipCard = null;
+
+    function openCardTooltip(cardEl) {
+      if (currentOpenTooltipCard && currentOpenTooltipCard !== cardEl) {
+        const prevTooltip = currentOpenTooltipCard.querySelector('.product-tooltip');
+        if (prevTooltip) prevTooltip.classList.remove('is-active');
+      }
+      currentOpenTooltipCard = cardEl;
+      const tooltip = cardEl.querySelector('.product-tooltip');
+      if (tooltip) tooltip.classList.add('is-active');
+    }
+
+    function closeCardTooltip() {
+      if (currentOpenTooltipCard) {
+        const tooltip = currentOpenTooltipCard.querySelector('.product-tooltip');
+        if (tooltip) tooltip.classList.remove('is-active');
+        currentOpenTooltipCard = null;
+      }
+    }
+
+    // 別の場所をクリックした際にツールチップを非表示にするリスナー
+    document.addEventListener('click', (e) => {
+      if (currentOpenTooltipCard && !currentOpenTooltipCard.contains(e.target)) {
+        closeCardTooltip();
+      }
+    }, true);
+
+    // 初期化処理
+    window.addEventListener('DOMContentLoaded', () => {
+      loadHeldProductsFromLocalStorage();
+      fetchProductsFromGAS();
+    });
+
+    function loadHeldProductsFromLocalStorage() {
+      try {
+        const saved = localStorage.getItem('app_held_product_ids');
+        if (saved) {
+          const arr = JSON.parse(saved);
+          if (Array.isArray(arr)) {
+            arr.forEach(id => heldProductIds.add(id));
+            updateHeldTextarea();
+          }
+        }
+      } catch (e) {
+        console.warn('LocalStorageからの復元に失敗しました:', e);
+      }
+    }
+
+    function saveHeldProductsToLocalStorage() {
+      try {
+        const arr = Array.from(heldProductIds);
+        localStorage.setItem('app_held_product_ids', JSON.stringify(arr));
+      } catch (e) {
+        console.warn('LocalStorageへの保存に失敗しました:', e);
+      }
+    }
+
+    function fetchProductsFromGAS() {
+  showLoading(true, 'スプレッドシートから商品データを取得中...');
+  
+  // 🔥 GitHub Pagesから動かすため、fetch通信を行います
+  fetch(GAS_URL, {
+    method: "POST",
+    body: JSON.stringify({ action: "getProducts" }) // 「商品を取りたい」という合図を送る
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('ネットワークエラーが発生しました。');
+    }
+    return response.json();
+  })
+  .then(result => {
+    if (result.status === "success") {
+      // ⭕ 成功したら、既存の関数（onProductsLoaded）へデータを渡す
+      onProductsLoaded(result.data);
+    } else {
+      throw new Error(result.message || 'データ取得に失敗しました。');
+    }
+  })
+  .catch(error => {
+    console.error('エラー詳細:', error);
+    // ❌ 失敗した場合は、既存のエラー処理関数を呼ぶ
+    onError(error.message);
+  });
+    }
+
+    function onProductsLoaded(data) {
+      allProducts = data || [];
+      extractAllTags();
+      renderPage1();
+      renderPage2();
+      renderPage3();
+      updateTagDatalist();
+      showLoading(false);
+      
+      if (allProducts.length === 0) {
+        showToast('商品データが空です。スプレッドシートをご確認ください。', 'warning');
+      }
+    }
+
+    function onError(err) {
+      const errMsg = (err && err.message) ? err.message : String(err);
+      
+      const spinner = document.getElementById('loading-spinner-container');
+      const errorBox = document.getElementById('loading-error-box');
+      const errorMsgEl = document.getElementById('loading-error-message');
+      
+      if (spinner && errorBox && errorMsgEl) {
+        spinner.classList.add('hidden');
+        errorBox.classList.remove('hidden');
+        errorMsgEl.textContent = errMsg;
+      }
+
+      showToast('エラーが発生しました: ' + errMsg, 'error');
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      
+      let bgClass = "bg-slate-800 text-white";
+      let icon = '<i class="fa-solid fa-circle-info text-blue-400"></i>';
+
+      if (type === 'success') {
+        bgClass = "bg-emerald-800 text-emerald-50 border border-emerald-600";
+        icon = '<i class="fa-solid fa-circle-check text-emerald-300"></i>';
+      } else if (type === 'error') {
+        bgClass = "bg-rose-900 text-rose-50 border border-rose-600";
+        icon = '<i class="fa-solid fa-circle-xmark text-rose-300"></i>';
+      } else if (type === 'warning') {
+        bgClass = "bg-amber-800 text-amber-50 border border-amber-600";
+        icon = '<i class="fa-solid fa-triangle-exclamation text-amber-300"></i>';
+      }
+
+      toast.className = `pointer-events-auto flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg shadow-xl text-xs font-medium transition-all transform translate-y-2 opacity-0 ${bgClass}`;
+      toast.innerHTML = `${icon} <span>${escapeHtml(message)}</span>`;
+
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      }, 10);
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    function showConfirmModal(message, onConfirm) {
+      const modal = document.getElementById('confirm-modal');
+      const msgEl = document.getElementById('modal-message');
+      const confirmBtn = document.getElementById('modal-confirm-btn');
+      const cancelBtn = document.getElementById('modal-cancel-btn');
+
+      msgEl.textContent = message;
+      modal.classList.remove('hidden');
+
+      const cleanup = () => {
+        modal.classList.add('hidden');
+        confirmBtn.onclick = null;
+        cancelBtn.onclick = null;
       };
 
-      try {
-        // GASへデータを送信
-        const response = await fetch(GAS_URL, {
-          method: "POST",
-          body: JSON.stringify(formData)
-        });
-        
-        const result = await response.json();
-        if (result.status === "success") {
-          alert("送信が完了しました！");
-          document.getElementById("myForm").reset();
-        } else {
-          alert("エラーが発生しました: " + result.message);
-        }
-      } catch (error) {
-        alert("通信に失敗しました。時間をおいて再度お試しください。");
+      confirmBtn.onclick = () => {
+        cleanup();
+        onConfirm();
+      };
+
+      cancelBtn.onclick = () => {
+        cleanup();
+      };
+    }
+
+    function showLoading(show, message = '処理中...') {
+      const overlay = document.getElementById('loading-overlay');
+      const text = document.getElementById('loading-text');
+      const spinner = document.getElementById('loading-spinner-container');
+      const errorBox = document.getElementById('loading-error-box');
+
+      text.textContent = message;
+      
+      if (show) {
+        spinner.classList.remove('hidden');
+        errorBox.classList.add('hidden');
+        overlay.classList.remove('hidden');
+      } else {
+        overlay.classList.add('hidden');
       }
-    });
+    }
+
+    function formatImageUrl(url) {
+      if (!url) return 'https://placehold.co/300x300/e2e8f0/1e293b?text=No+Image';
+      
+      const driveMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+      if (driveMatch && driveMatch[1]) {
+        return `https://drive.google.com/thumbnail?id=${driveMatch[1]}&sz=w600`;
+      }
+      return url;
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function extractAllTags() {
+      allTags.clear();
+      allProducts.forEach(p => {
+        if (Array.isArray(p.tags)) {
+          p.tags.forEach(t => allTags.add(t));
+        }
+      });
+    }
+
+    function switchTab(pageId) {
+      const p1Section = document.getElementById('page1');
+      const p2Section = document.getElementById('page2');
+      const p3Section = document.getElementById('page3');
+      
+      const p1Btn = document.getElementById('tab-btn-page1');
+      const p2Btn = document.getElementById('tab-btn-page2');
+      const p3Btn = document.getElementById('tab-btn-page3');
+
+      // 非表示の初期化
+      p1Section.classList.add('hidden');
+      p2Section.classList.add('hidden');
+      p3Section.classList.add('hidden');
+
+      const inactiveClass = "px-3.5 py-1.5 rounded-md font-medium text-xs sm:text-sm transition-all text-slate-300 hover:text-white";
+
+      p1Btn.className = inactiveClass;
+      p2Btn.className = inactiveClass;
+      p3Btn.className = inactiveClass;
+
+      if (pageId === 'page1') {
+        p1Section.classList.remove('hidden');
+        p1Btn.className = "px-3.5 py-1.5 rounded-md font-medium text-xs sm:text-sm transition-all bg-amber-500 text-slate-950 shadow-sm";
+      } else if (pageId === 'page2') {
+        p2Section.classList.remove('hidden');
+        p2Btn.className = "px-3.5 py-1.5 rounded-md font-medium text-xs sm:text-sm transition-all bg-emerald-500 text-slate-950 shadow-sm";
+      } else if (pageId === 'page3') {
+        p3Section.classList.remove('hidden');
+        p3Btn.className = "px-3.5 py-1.5 rounded-md font-medium text-xs sm:text-sm transition-all bg-purple-500 text-white shadow-sm";
+      }
+    }
+
+    function renderPage1() {
+      renderP1TagCloud();
+      renderP1Products();
+    }
+
+    function onP1SearchInput() {
+      const input = document.getElementById('p1-keyword-search');
+      searchKeyword = (input.value || '').trim().toLowerCase();
+      renderP1Products();
+    }
+
+    function renderP1TagCloud() {
+      const container = document.getElementById('p1-tag-cloud');
+      container.innerHTML = '';
+
+      Array.from(allTags).sort().forEach(tag => {
+        const isSelected = selectedFilterTags.has(tag);
+        const badge = document.createElement('button');
+        badge.onclick = () => toggleFilterTag(tag);
+        
+        if (isSelected) {
+          badge.className = "text-[11px] px-2.5 py-0.5 rounded-full font-medium transition-all bg-indigo-600 text-white shadow-sm flex items-center gap-1";
+          badge.innerHTML = `<i class="fa-solid fa-check text-[9px]"></i> ${escapeHtml(tag)}`;
+        } else {
+          badge.className = "text-[11px] px-2.5 py-0.5 rounded-full font-medium transition-all bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200";
+          badge.textContent = tag;
+        }
+        container.appendChild(badge);
+      });
+    }
+
+    function toggleFilterTag(tag) {
+      if (selectedFilterTags.has(tag)) {
+        selectedFilterTags.delete(tag);
+      } else {
+        selectedFilterTags.add(tag);
+      }
+      renderP1TagCloud();
+      renderP1Products();
+    }
+
+    function clearTagFilters() {
+      selectedFilterTags.clear();
+      searchKeyword = '';
+      const input = document.getElementById('p1-keyword-search');
+      if (input) input.value = '';
+      
+      renderP1TagCloud();
+      renderP1Products();
+    }
+
+    function renderP1Products() {
+      const container = document.getElementById('p1-series-container');
+      container.innerHTML = '';
+
+      // フィルター適用（AND条件タグ検索 ＋ キーワード検索）
+      const filteredProducts = allProducts.filter(p => {
+        if (selectedFilterTags.size > 0) {
+          const pTags = p.tags || [];
+          for (const tag of selectedFilterTags) {
+            if (!pTags.includes(tag)) return false;
+          }
+        }
+        if (searchKeyword) {
+          const matchName = (p.name || '').toLowerCase().includes(searchKeyword);
+          const matchId = (p.id || '').toLowerCase().includes(searchKeyword);
+          if (!matchName && !matchId) return false;
+        }
+        return true;
+      });
+
+      if (filteredProducts.length === 0) {
+        container.innerHTML = `
+          <div class="bg-white rounded-xl p-8 text-center text-slate-500 border border-slate-200">
+            <i class="fa-solid fa-magnifying-glass text-3xl mb-2 text-slate-300"></i>
+            <p class="text-xs">条件に該当する商品が見つかりませんでした。</p>
+          </div>`;
+        return;
+      }
+
+      // シリーズ単位でグループ化
+      const seriesGroups = {};
+      filteredProducts.forEach(p => {
+        const sKey = p.seriesId || 'others';
+        if (!seriesGroups[sKey]) {
+          seriesGroups[sKey] = {
+            id: p.seriesId,
+            name: p.seriesName || '未分類シリーズ',
+            items: []
+          };
+        }
+        seriesGroups[sKey].items.push(p);
+      });
+
+      // 各シリーズのカード描画（最大10列の高密度レスポンシブグリッド）
+      Object.values(seriesGroups).forEach(group => {
+        const groupEl = document.createElement('div');
+        groupEl.className = "bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3";
+
+        const headerHtml = `
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h3 class="font-bold text-slate-900 text-xs sm:text-sm flex items-center gap-2">
+              ${escapeHtml(group.name)}
+            </h3>
+            <div class="flex items-center gap-2">
+              <button onclick="toggleP1Series('${escapeHtml(group.id)}')" class="text-[11px] text-blue-700 hover:text-blue-900 font-medium underline">
+                このシリーズを一括選択/解除
+              </button>
+              <span class="text-[11px] font-bold text-slate-500">(${group.items.length}件)</span>
+            </div>
+          </div>`;
+
+        // 画像グリッド（1行あたり3〜10個配置）
+        let gridHtml = `<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">`;
+        
+        group.items.forEach(p => {
+          const isHeld = heldProductIds.has(p.id);
+          const heldClass = isHeld ? 'is-held' : '';
+          const imgUrl = formatImageUrl(p.imageUrl);
+          const tagsStr = (p.tags || []).join(', ');
+
+          gridHtml += `
+            <div id="p1-card-${escapeHtml(p.id)}" onclick="toggleHoldProduct('${escapeHtml(p.id)}')" onmouseenter="openCardTooltip(this)"
+                 class="product-card bg-slate-50 hover:bg-slate-100 rounded-lg p-1.5 border border-slate-200 transition-all cursor-pointer select-none flex flex-col items-center justify-between ${heldClass}">
+              
+              <div class="w-full aspect-square bg-white rounded overflow-hidden mb-1 flex items-center justify-center border border-slate-100 relative">
+                <img src="${escapeHtml(imgUrl)}" loading="lazy" alt="${escapeHtml(p.name)}" class="w-full h-full object-cover">
+              </div>
+
+              <div class="w-full text-center">
+                <p class="text-[11px] font-bold text-slate-800 truncate leading-tight" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</p>
+              </div>
+
+              <!-- ホバーツールチップ（テキスト選択可能） -->
+              <div onclick="event.stopPropagation()" onmousedown="event.stopPropagation()"
+                   class="product-tooltip absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-slate-900/95 text-white p-2.5 rounded-lg shadow-xl text-[11px] leading-tight space-y-1.5 select-text cursor-text">
+                <div class="border-b border-slate-700/60 pb-1">
+                  <p class="font-bold text-amber-300 break-words">${escapeHtml(p.name)}</p>
+                </div>
+                <div class="font-mono text-[10px] text-slate-300">
+                  <span>ID: ${escapeHtml(p.id)}</span>
+                </div>
+                <p class="text-[10px] text-slate-300 break-words"><span class="text-slate-400">タグ:</span> ${escapeHtml(tagsStr || 'なし')}</p>
+              </div>
+
+            </div>`;
+        });
+
+        gridHtml += `</div>`;
+        groupEl.innerHTML = headerHtml + gridHtml;
+        container.appendChild(groupEl);
+      });
+    }
+
+    function toggleHoldProduct(productId) {
+      if (heldProductIds.has(productId)) {
+        heldProductIds.delete(productId);
+      } else {
+        heldProductIds.add(productId);
+      }
+      
+      saveHeldProductsToLocalStorage();
+      updateHeldTextarea();
+
+      // UIクラスの即時更新
+      const card = document.getElementById(`p1-card-${productId}`);
+      if (card) {
+        if (heldProductIds.has(productId)) {
+          card.classList.add('is-held');
+        } else {
+          card.classList.remove('is-held');
+        }
+      }
+    }
+
+    function toggleP1Series(seriesId) {
+      const items = allProducts.filter(p => (p.seriesId || 'others') === seriesId);
+      if (items.length === 0) return;
+
+      const allHeld = items.every(p => heldProductIds.has(p.id));
+
+      items.forEach(p => {
+        if (allHeld) {
+          heldProductIds.delete(p.id);
+        } else {
+          heldProductIds.add(p.id);
+        }
+      });
+
+      saveHeldProductsToLocalStorage();
+      updateHeldTextarea();
+      renderP1Products();
+    }
+
+    function updateHeldTextarea() {
+      const textarea = document.getElementById('p1-held-ids-textarea');
+      const countLabel = document.getElementById('p1-held-count');
+      
+      const arr = Array.from(heldProductIds).sort();
+      if (textarea) textarea.value = arr.join('\n');
+      if (countLabel) countLabel.textContent = `${arr.length}件`;
+    }
+
+    function copyHeldIds() {
+      const textarea = document.getElementById('p1-held-ids-textarea');
+      if (!textarea || !textarea.value.trim()) {
+        showToast('コピーする所持商品IDがありません。', 'warning');
+        return;
+      }
+      
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        showToast('所持商品ID一覧をクリップボードにコピーしました！', 'success');
+      } catch (err) {
+        showToast('コピーに失敗しました。直接選択してコピーしてください。', 'error');
+      }
+    }
+
+    function clearAllHeld() {
+      if (heldProductIds.size === 0) return;
+      
+      showConfirmModal('所持している商品IDの記録をすべてクリアしますか？', () => {
+        heldProductIds.clear();
+        saveHeldProductsToLocalStorage();
+        updateHeldTextarea();
+        renderP1Products();
+        showToast('所持リストをクリアしました。', 'info');
+      });
+    }
+
+    function renderPage2() {
+      renderP2Products();
+    }
+
+    function updateTagDatalist() {
+      const datalist = document.getElementById('existing-tags-list');
+      if (!datalist) return;
+      datalist.innerHTML = '';
+      
+      Array.from(allTags).sort().forEach(tag => {
+        const opt = document.createElement('option');
+        opt.value = tag;
+        datalist.appendChild(opt);
+      });
+    }
+
+    function renderP2Products() {
+      const container = document.getElementById('p2-series-container');
+      container.innerHTML = '';
+
+      if (allProducts.length === 0) {
+        container.innerHTML = `
+          <div class="bg-white rounded-xl p-8 text-center text-slate-500 border border-slate-200">
+            <p class="text-xs">商品データが存在しません。</p>
+          </div>`;
+        return;
+      }
+
+      // シリーズ単位でグループ化
+      const seriesGroups = {};
+      allProducts.forEach(p => {
+        const sKey = p.seriesId || 'others';
+        if (!seriesGroups[sKey]) {
+          seriesGroups[sKey] = {
+            id: p.seriesId,
+            name: p.seriesName || '未分類シリーズ',
+            items: []
+          };
+        }
+        seriesGroups[sKey].items.push(p);
+      });
+
+      // ページ2グリッド描画
+      Object.values(seriesGroups).forEach(group => {
+        const groupEl = document.createElement('div');
+        groupEl.className = "bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3";
+
+        const headerHtml = `
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h3 class="font-bold text-slate-900 text-xs sm:text-sm flex items-center gap-2">
+              ${escapeHtml(group.name)}
+            </h3>
+            <div class="flex items-center gap-2">
+              <button onclick="toggleP2Series('${escapeHtml(group.id)}')" class="text-[11px] text-emerald-700 hover:text-emerald-900 font-medium underline">
+                このシリーズを一括選択/解除
+              </button>
+              <span class="text-[11px] font-bold text-slate-500">(${group.items.length}件)</span>
+            </div>
+          </div>`;
+
+        let gridHtml = `<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">`;
+        
+        group.items.forEach(p => {
+          const isSelected = selectedP2ProductIds.has(p.id);
+          const selClass = isSelected ? 'is-selected-edit' : '';
+          const imgUrl = formatImageUrl(p.imageUrl);
+          const tagsStr = (p.tags || []).join(', ');
+
+          gridHtml += `
+            <div id="p2-card-${escapeHtml(p.id)}" onclick="toggleP2ProductSelection('${escapeHtml(p.id)}')" onmouseenter="openCardTooltip(this)"
+                 class="product-card bg-slate-50 hover:bg-slate-100 rounded-lg p-1.5 border border-slate-200 transition-all cursor-pointer select-none flex flex-col items-center justify-between ${selClass}">
+              
+              <div class="w-full aspect-square bg-white rounded overflow-hidden mb-1 flex items-center justify-center border border-slate-100 relative">
+                <img src="${escapeHtml(imgUrl)}" loading="lazy" alt="${escapeHtml(p.name)}" class="w-full h-full object-cover">
+              </div>
+
+              <div class="w-full text-center">
+                <p class="text-[11px] font-bold text-slate-800 truncate leading-tight" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</p>
+              </div>
+
+              <!-- ホバーツールチップ（テキスト選択可能） -->
+              <div onclick="event.stopPropagation()" onmousedown="event.stopPropagation()"
+                   class="product-tooltip absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-slate-900/95 text-white p-2.5 rounded-lg shadow-xl text-[11px] leading-tight space-y-1.5 select-text cursor-text">
+                <div class="border-b border-slate-700/60 pb-1">
+                  <p class="font-bold text-emerald-300 break-words">${escapeHtml(p.name)}</p>
+                </div>
+                <div class="font-mono text-[10px] text-slate-300">
+                  <span>ID: ${escapeHtml(p.id)}</span>
+                </div>
+                <p class="text-[10px] text-slate-300 break-words"><span class="text-slate-400">現在のタグ:</span> ${escapeHtml(tagsStr || 'なし')}</p>
+              </div>
+
+            </div>`;
+        });
+
+        gridHtml += `</div>`;
+        groupEl.innerHTML = headerHtml + gridHtml;
+        container.appendChild(groupEl);
+      });
+
+      updateP2SelectedCount();
+    }
+
+    function toggleP2ProductSelection(productId) {
+      if (selectedP2ProductIds.has(productId)) {
+        selectedP2ProductIds.delete(productId);
+      } else {
+        selectedP2ProductIds.add(productId);
+      }
+
+      const card = document.getElementById(`p2-card-${productId}`);
+      if (card) {
+        if (selectedP2ProductIds.has(productId)) {
+          card.classList.add('is-selected-edit');
+        } else {
+          card.classList.remove('is-selected-edit');
+        }
+      }
+      updateP2SelectedCount();
+    }
+
+    function toggleP2Series(seriesId) {
+      const items = allProducts.filter(p => (p.seriesId || 'others') === seriesId);
+      if (items.length === 0) return;
+
+      const allSelected = items.every(p => selectedP2ProductIds.has(p.id));
+      
+      items.forEach(p => {
+        if (allSelected) {
+          selectedP2ProductIds.delete(p.id);
+        } else {
+          selectedP2ProductIds.add(p.id);
+        }
+      });
+
+      renderP2Products();
+    }
+
+    function selectAllP2Products() {
+      allProducts.forEach(p => selectedP2ProductIds.add(p.id));
+      renderP2Products();
+    }
+
+    function clearP2Selections() {
+      selectedP2ProductIds.clear();
+      renderP2Products();
+    }
+
+    function updateP2SelectedCount() {
+      const el = document.getElementById('p2-selected-count');
+      if (el) el.textContent = `選択中: ${selectedP2ProductIds.size} 件`;
+    }
+
+    function requestBatchTagUpdate() {
+      if (selectedP2ProductIds.size === 0) {
+        showToast('タグを変更する商品を選択してください。', 'warning');
+        return;
+      }
+
+      const addInput = document.getElementById('p2-add-tags-input');
+      const removeInput = document.getElementById('p2-remove-tags-input');
+
+      const addRaw = addInput ? addInput.value.trim() : '';
+      const removeRaw = removeInput ? removeInput.value.trim() : '';
+
+      if (!addRaw && !removeRaw) {
+        showToast('「追加したいタグ」または「削除したいタグ」を入力してください。', 'warning');
+        return;
+      }
+
+      const addTags = addRaw ? addRaw.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
+      const removeTags = removeRaw ? removeRaw.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
+
+      const msg = `選択中の ${selectedP2ProductIds.size} 件の商品に対して、タグの一括更新を実行しますか？\n` +
+                  (addTags.length ? `・追加: [${addTags.join(', ')}]\n` : '') +
+                  (removeTags.length ? `・削除: [${removeTags.join(', ')}]` : '');
+
+      showConfirmModal(msg, () => {
+        showLoading(true, 'スプレッドシートのタグ情報を更新中...');
+
+        const targetIds = Array.from(selectedP2ProductIds);
+
+        if (typeof window !== 'undefined' && window.google && window.google.script && window.google.script.run) {
+          window.google.script.run
+            .withSuccessHandler(onBatchUpdateSuccess)
+            .withFailureHandler(onError)
+            .updateProductTags(targetIds, addTags, removeTags);
+        } else {
+          // モック用ローカル処理
+          setTimeout(() => {
+            allProducts.forEach(p => {
+              if (selectedP2ProductIds.has(p.id)) {
+                let current = p.tags || [];
+                if (removeTags.length) current = current.filter(t => !removeTags.includes(t));
+                if (addTags.length) {
+                  addTags.forEach(t => { if (!current.includes(t)) current.push(t); });
+                }
+                p.tags = current;
+              }
+            });
+            onBatchUpdateSuccess({ success: true, message: `${targetIds.length}件の商品のタグを更新しました。` });
+          }, 800);
+        }
+      });
+    }
+
+    function onBatchUpdateSuccess(res) {
+      showLoading(false);
+      if (res && res.success) {
+        showToast(res.message || 'タグを一括更新しました！', 'success');
+        
+        // フォームリセット
+        const addInput = document.getElementById('p2-add-tags-input');
+        const removeInput = document.getElementById('p2-remove-tags-input');
+        if (addInput) addInput.value = '';
+        if (removeInput) removeInput.value = '';
+
+        // 再取得と再描画
+        fetchProductsFromGAS();
+      } else {
+        showToast(res ? res.message : 'タグ更新に失敗しました。', 'error');
+      }
+    }
+
+    // ==========================================
+    // ページ 3 : 純粋画像ギャラリー用ロジック
+    // ==========================================
+    function setP3ImageSize(size) {
+      p3ImageSize = size;
+
+      const btnSm = document.getElementById('p3-size-sm');
+      const btnMd = document.getElementById('p3-size-md');
+      const btnLg = document.getElementById('p3-size-lg');
+
+      const activeBtnClass = "px-2 py-1 rounded bg-white shadow-sm font-bold text-slate-800";
+      const inactiveBtnClass = "px-2 py-1 rounded text-slate-600 hover:text-slate-900";
+
+      if (btnSm) btnSm.className = size === 'sm' ? activeBtnClass : inactiveBtnClass;
+      if (btnMd) btnMd.className = size === 'md' ? activeBtnClass : inactiveBtnClass;
+      if (btnLg) btnLg.className = size === 'lg' ? activeBtnClass : inactiveBtnClass;
+
+      renderPage3();
+    }
+
+    function renderPage3() {
+      renderP3TagCloud();
+
+      const container = document.getElementById('p3-series-container');
+      const totalCountLabel = document.getElementById('p3-total-count');
+      if (!container) return;
+
+      // ページ3用タグフィルターの適用 (AND検索)
+      const filteredProducts = allProducts.filter(p => {
+        if (selectedP3FilterTags.size > 0) {
+          const pTags = p.tags || [];
+          for (const tag of selectedP3FilterTags) {
+            if (!pTags.includes(tag)) return false;
+          }
+        }
+        return true;
+      });
+
+      container.innerHTML = '';
+      if (totalCountLabel) {
+        if (selectedP3FilterTags.size > 0) {
+          totalCountLabel.textContent = `${filteredProducts.length} / 全 ${allProducts.length} 点`;
+        } else {
+          totalCountLabel.textContent = `全 ${allProducts.length} 点`;
+        }
+      }
+
+      if (filteredProducts.length === 0) {
+        container.innerHTML = `
+          <div class="bg-white rounded-xl p-8 text-center text-slate-500 border border-slate-200">
+            <i class="fa-solid fa-magnifying-glass text-3xl mb-2 text-slate-300"></i>
+            <p class="text-xs">条件に該当する画像が見つかりませんでした。</p>
+          </div>`;
+        return;
+      }
+
+      // サイズ設定に応じた Tailwind グリッドクラスの決定
+      let gridColsClass = "grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-2";
+      if (p3ImageSize === 'md') {
+        gridColsClass = "grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3";
+      } else if (p3ImageSize === 'lg') {
+        gridColsClass = "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4";
+      }
+
+      // 全商品を単一のグリッド内に直接配置（ホバー表示対応）
+      const galleryWrapper = document.createElement('div');
+      galleryWrapper.className = "bg-white rounded-xl shadow-sm border border-slate-200 p-4";
+
+      let gridHtml = `<div class="grid ${gridColsClass}">`;
+
+      filteredProducts.forEach(p => {
+        const imgUrl = formatImageUrl(p.imageUrl);
+        const tagsStr = (p.tags || []).join(', ');
+
+        gridHtml += `
+          <div id="p3-card-${escapeHtml(p.id)}" onclick="openImageModal('${escapeHtml(imgUrl)}', '${escapeHtml(p.name)}', '${escapeHtml(p.id)}')" onmouseenter="openCardTooltip(this)"
+               class="product-card gallery-img-container aspect-square bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-all cursor-pointer shadow-xs flex items-center justify-center relative group">
+            
+            <div class="w-full h-full rounded-lg overflow-hidden flex items-center justify-center relative">
+              <img src="${escapeHtml(imgUrl)}" loading="lazy" alt="${escapeHtml(p.name)}" class="w-full h-full object-cover">
+              
+              <!-- ホバー時のオーバーレイ表示（拡大アイコンのみ） -->
+              <div class="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <i class="fa-solid fa-magnifying-glass-plus text-white text-lg drop-shadow"></i>
+              </div>
+            </div>
+
+            <!-- ホバーツールチップ（テキスト選択可能） -->
+            <div onclick="event.stopPropagation()" onmousedown="event.stopPropagation()"
+                 class="product-tooltip absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-slate-900/95 text-white p-2.5 rounded-lg shadow-xl text-[11px] leading-tight space-y-1.5 select-text cursor-text z-30">
+              <div class="border-b border-slate-700/60 pb-1">
+                <p class="font-bold text-purple-300 break-words">${escapeHtml(p.name)}</p>
+              </div>
+              <div class="font-mono text-[10px] text-slate-300">
+                <span>ID: ${escapeHtml(p.id)}</span>
+              </div>
+              <p class="text-[10px] text-slate-300 break-words"><span class="text-slate-400">タグ:</span> ${escapeHtml(tagsStr || 'なし')}</p>
+            </div>
+
+          </div>`;
+      });
+
+      gridHtml += `</div>`;
+      galleryWrapper.innerHTML = gridHtml;
+      container.appendChild(galleryWrapper);
+    }
+
+    function renderP3TagCloud() {
+      const container = document.getElementById('p3-tag-cloud');
+      if (!container) return;
+      container.innerHTML = '';
+
+      Array.from(allTags).sort().forEach(tag => {
+        const isSelected = selectedP3FilterTags.has(tag);
+        const badge = document.createElement('button');
+        badge.onclick = () => toggleP3FilterTag(tag);
+        
+        if (isSelected) {
+          badge.className = "text-[11px] px-2.5 py-0.5 rounded-full font-medium transition-all bg-purple-600 text-white shadow-sm flex items-center gap-1";
+          badge.innerHTML = `<i class="fa-solid fa-check text-[9px]"></i> ${escapeHtml(tag)}`;
+        } else {
+          badge.className = "text-[11px] px-2.5 py-0.5 rounded-full font-medium transition-all bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200";
+          badge.textContent = tag;
+        }
+        container.appendChild(badge);
+      });
+    }
+
+    function toggleP3FilterTag(tag) {
+      if (selectedP3FilterTags.has(tag)) {
+        selectedP3FilterTags.delete(tag);
+      } else {
+        selectedP3FilterTags.add(tag);
+      }
+      renderPage3();
+    }
+
+    function clearP3TagFilters() {
+      selectedP3FilterTags.clear();
+      renderPage3();
+    }
+
+    // 拡大画像プレビューモーダル表示
+    function openImageModal(imgUrl, name, id) {
+      const modal = document.getElementById('image-modal');
+      const imgEl = document.getElementById('modal-img-element');
+      const nameEl = document.getElementById('modal-img-name');
+      const idEl = document.getElementById('modal-img-id');
+
+      if (!modal || !imgEl) return;
+
+      imgEl.src = imgUrl;
+      if (nameEl) nameEl.textContent = name || '';
+      if (idEl) idEl.textContent = id ? `ID: ${id}` : '';
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeImageModal() {
+      const modal = document.getElementById('image-modal');
+      if (modal) modal.classList.add('hidden');
+    }
   </script>
 </body>
 </html>
