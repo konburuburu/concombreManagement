@@ -1001,57 +1001,42 @@
     }
 
     function requestBatchTagUpdate() {
-      if (selectedP2ProductIds.size === 0) {
-        showToast('タグを変更する商品を選択してください。', 'warning');
-        return;
-      }
-
-      const addInput = document.getElementById('p2-add-tags-input');
-      const removeInput = document.getElementById('p2-remove-tags-input');
-
-      const addRaw = addInput ? addInput.value.trim() : '';
-      const removeRaw = removeInput ? removeInput.value.trim() : '';
-
-      if (!addRaw && !removeRaw) {
-        showToast('「追加したいタグ」または「削除したいタグ」を入力してください。', 'warning');
-        return;
-      }
-
-      const addTags = addRaw ? addRaw.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
-      const removeTags = removeRaw ? removeRaw.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
-
-      const msg = `選択中の ${selectedP2ProductIds.size} 件の商品に対して、タグの一括更新を実行しますか？\n` +
-                  (addTags.length ? `・追加: [${addTags.join(', ')}]\n` : '') +
-                  (removeTags.length ? `・削除: [${removeTags.join(', ')}]` : '');
-
-      showConfirmModal(msg, () => {
+            showConfirmModal(msg, () => {
         showLoading(true, 'スプレッドシートのタグ情報を更新中...');
 
         const targetIds = Array.from(selectedP2ProductIds);
 
-        if (typeof window !== 'undefined' && window.google && window.google.script && window.google.script.run) {
-          window.google.script.run
-            .withSuccessHandler(onBatchUpdateSuccess)
-            .withFailureHandler(onError)
-            .updateProductTags(targetIds, addTags, removeTags);
-        } else {
-          // モック用ローカル処理
-          setTimeout(() => {
-            allProducts.forEach(p => {
-              if (selectedP2ProductIds.has(p.id)) {
-                let current = p.tags || [];
-                if (removeTags.length) current = current.filter(t => !removeTags.includes(t));
-                if (addTags.length) {
-                  addTags.forEach(t => { if (!current.includes(t)) current.push(t); });
-                }
-                p.tags = current;
-              }
-            });
-            onBatchUpdateSuccess({ success: true, message: `${targetIds.length}件の商品のタグを更新しました。` });
-          }, 800);
-        }
+        // 🔥 GitHub PagesからGASへデータを送信する処理
+        fetch(GAS_URL, {
+          method: "POST",
+          body: JSON.stringify({
+            action: "updateProductTags", // GAS側に「タグ更新をして」と伝える
+            targetIds: targetIds,
+            addTags: addTags,
+            removeTags: removeTags
+          })
+        })
+        .then(response => {
+          if (!response.ok) throw new Error('ネットワークエラーが発生しました。');
+          return response.json();
+        })
+        .then(result => {
+          if (result.status === "success") {
+            // ⭕ 成功したら、既存の成功処理関数へGASからの返答を渡す
+            onBatchUpdateSuccess(result.data);
+          } else {
+            throw new Error(result.message || 'タグの更新に失敗しました。');
+          }
+        })
+        .catch(error => {
+          console.error('エラー詳細:', error);
+          // ❌ 失敗した場合は、既存のエラー処理関数を呼ぶ
+          onError(error.message);
+        });
       });
+
     }
+
 
     function onBatchUpdateSuccess(res) {
       showLoading(false);
