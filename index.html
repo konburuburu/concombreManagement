@@ -1000,42 +1000,65 @@
       if (el) el.textContent = `選択中: ${selectedP2ProductIds.size} 件`;
     }
 
-    function requestBatchTagUpdate() {
-            showConfirmModal(msg, () => {
-        showLoading(true, 'スプレッドシートのタグ情報を更新中...');
+function requestBatchTagUpdate() {
+  if (selectedP2ProductIds.size === 0) {
+    showToast('タグを変更する商品を選択してください。', 'warning');
+    return;
+  }
 
-        const targetIds = Array.from(selectedP2ProductIds);
+  const addInput = document.getElementById('p2-add-tags-input');
+  const removeInput = document.getElementById('p2-remove-tags-input');
 
-        // 🔥 GitHub PagesからGASへデータを送信する処理
-        fetch(GAS_URL, {
-          method: "POST",
-          body: JSON.stringify({
-            action: "updateProductTags", // GAS側に「タグ更新をして」と伝える
-            targetIds: targetIds,
-            addTags: addTags,
-            removeTags: removeTags
-          })
-        })
-        .then(response => {
-          if (!response.ok) throw new Error('ネットワークエラーが発生しました。');
-          return response.json();
-        })
-        .then(result => {
-          if (result.status === "success") {
-            // ⭕ 成功したら、既存の成功処理関数へGASからの返答を渡す
-            onBatchUpdateSuccess(result.data);
-          } else {
-            throw new Error(result.message || 'タグの更新に失敗しました。');
-          }
-        })
-        .catch(error => {
-          console.error('エラー詳細:', error);
-          // ❌ 失敗した場合は、既存のエラー処理関数を呼ぶ
-          onError(error.message);
-        });
-      });
+  const addRaw = addInput ? addInput.value.trim() : '';
+  const removeRaw = removeInput ? removeInput.value.trim() : '';
 
-    }
+  if (!addRaw && !removeRaw) {
+    showToast('「追加したいタグ」または「削除したいタグ」を入力してください。', 'warning');
+    return;
+  }
+
+  const addTags = addRaw ? addRaw.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
+  const removeTags = removeRaw ? removeRaw.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
+
+  // 💡 【超重要】ここで確認メッセージ（msg）を作っています。この処理の「下」に送信処理を書く必要があります。
+  const msg = `選択中の ${selectedP2ProductIds.size} 件の商品に対して、タグの一括更新を実行しますか？\n` +
+              (addTags.length ? `・追加: [${addTags.join(', ')}]\n` : '') +
+              (removeTags.length ? `・削除: [${removeTags.join(', ')}]` : '');
+
+  // モーダルを開いて「はい」が押されたら実行する
+  showConfirmModal(msg, () => {
+    showLoading(true, 'スプレッドシートのタグ情報を更新中...');
+
+    const targetIds = Array.from(selectedP2ProductIds);
+
+    // 🔥 GASへ一括更新のリクエストを送信
+    fetch(GAS_URL, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "updateProductTags", 
+        targetIds: targetIds,
+        addTags: addTags,
+        removeTags: removeTags
+      })
+    })
+    .then(response => {
+      if (!response.ok) throw new Error('ネットワークエラーが発生しました。');
+      return response.json();
+    })
+    .then(result => {
+      if (result.status === "success") {
+        // ⭕ 成功したら、GASから返ってきた結果データを渡す
+        onBatchUpdateSuccess(result.data);
+      } else {
+        throw new Error(result.message || 'タグの更新に失敗しました。');
+      }
+    })
+    .catch(error => {
+      console.error('エラー詳細:', error);
+      onError(error.message);
+    });
+  });
+}
 
 
     function onBatchUpdateSuccess(res) {
