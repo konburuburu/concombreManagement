@@ -388,7 +388,7 @@ tooltip.style.top = 'calc(100% + 8px)';
 } else {
 tooltip.style.bottom = 'calc(100% + 8px)';
 }
-/***
+
 // 2. 左右切れ対策：画面の端からはみ出る場合、位置を補正する
 // ツールチップの画面上の左端・右端を計算
 const cardCenterX = rect.left + rect.width / 2;
@@ -396,7 +396,7 @@ const halfTooltipWidth = tooltipRect.width / 2;
 
 let offsetX = -50; // デフォルトは中央揃え (-50%)
 const margin = 10; // 画面端からの余白（マージン）
-
+/***
 // 左端からはみ出る場合
 if (cardCenterX - halfTooltipWidth < margin) {
 // 画面左端に合わせる（カードの中心位置からのピクセル差分で計算）
